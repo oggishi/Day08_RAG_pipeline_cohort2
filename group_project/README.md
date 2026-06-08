@@ -171,33 +171,82 @@ run_dashboard()
 ## Kiến Trúc Hệ Thống
 
 ```
-[Vẽ diagram kiến trúc ở đây]
+GitHub repo (push to main)
+   ├─ .github/workflows/deploy-frontend.yml → GitHub Pages (host static web/)
+   └─ .github/workflows/deploy-backend.yml  → Hugging Face Space (Docker)
+                                                    │
+   web UI (GitHub Pages, HTML/CSS/JS)               │
+        │  fetch POST /chat { query }               │
+        └──────────────────────────────────────────┘
+                                                    │
+                                          FastAPI app (api/main.py)
+                                                    │
+                                       generate_with_citation()  (Task 10)
+                                                    │
+                                          retrieve()  (Task 9 — hybrid pipeline)
+                                          ┌─────────┼──────────┬──────────────┐
+                                          │         │          │              │
+                                   semantic search  lexical   rerank     PageIndex
+                                   (Weaviate Cloud) (BM25,    (cross-   (vectorless,
+                                                     local .md) encoder)  fallback khi
+                                                                          score < 0.3)
+                                                    │
+                                          OpenAI gpt-4o-mini → answer + citations
 ```
+
+**Stack triển khai:**
+- **Frontend**: static HTML/CSS/JS (`web/`) — deploy qua GitHub Pages
+- **Backend**: FastAPI (`api/main.py`) đóng gói Docker — deploy qua Hugging Face Spaces
+- **Vector DB**: Weaviate Cloud (646 chunks từ 8 tài liệu — luật phòng chống ma túy + tin tức liên quan)
+- **CI/CD**: 2 GitHub Actions workflow tự động build & deploy mỗi khi push lên `main`
 
 ---
 
 ## Phân Công Công Việc
 
-| Thành viên | MSSV | Nhiệm vụ | Trạng thái |
-|-----------|------|----------|------------|
-| | | | |
-| | | | |
-| | | | |
-| | | | |
+> Đồ án này được thực hiện cá nhân (1 thành viên) — không có phân công nhóm.
+> Toàn bộ các phần: tích hợp pipeline (Task 1–10), xây dựng API + giao diện chat,
+> deploy CI/CD (frontend + backend), và evaluation pipeline đều do một người
+> đảm nhiệm.
 
 ---
 
 ## Hướng Dẫn Chạy
 
+### Chạy local
+
 ```bash
 # Cài đặt dependencies
 pip install -r requirements.txt
 
-# Chạy app
-streamlit run app.py
-# hoặc
-chainlit run app.py
+# Cấu hình .env (xem .env.example): OPENAI_API_KEY, WEAVIATE_URL,
+# WEAVIATE_API_KEY, JINA_API_KEY, PAGEINDEX_API_KEY
+
+# Chạy backend API (FastAPI)
+uvicorn api.main:app --reload --port 8000
+
+# Mở web/index.html trong trình duyệt (chỉnh API_BASE trong web/app.js
+# trỏ về http://localhost:8000 khi test local)
 ```
+
+### Chạy bản demo đã deploy
+
+- Frontend: trang GitHub Pages của repo (deploy tự động qua `deploy-frontend.yml`)
+- Backend API: `https://oggishi-lab08.hf.space` (Hugging Face Space, Docker SDK,
+  deploy tự động qua `deploy-backend.yml` mỗi khi push `api/`, `src/`,
+  `data/standardized/`, `requirements.txt`, hoặc `Dockerfile` lên `main`)
+
+### Chạy evaluation pipeline
+
+```bash
+python -m group_project.evaluation.eval_pipeline
+```
+
+Kết quả (bảng điểm, A/B comparison, worst performers, đề xuất cải tiến) được
+xuất ra `group_project/evaluation/results.md`. Xem chi tiết tại
+[evaluation/golden_dataset.json](evaluation/golden_dataset.json),
+[evaluation/eval_pipeline.py](evaluation/eval_pipeline.py),
+[evaluation/results.md](evaluation/results.md).
 
 ---
 
