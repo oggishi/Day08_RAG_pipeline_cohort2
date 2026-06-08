@@ -1,0 +1,11 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Tooling caches
+.deepeval/
+
