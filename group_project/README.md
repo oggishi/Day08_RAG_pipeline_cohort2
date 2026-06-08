@@ -204,10 +204,11 @@ GitHub repo (push to main)
 
 ## Phân Công Công Việc
 
-> Đồ án này được thực hiện cá nhân (1 thành viên) — không có phân công nhóm.
-> Toàn bộ các phần: tích hợp pipeline (Task 1–10), xây dựng API + giao diện chat,
-> deploy CI/CD (frontend + backend), và evaluation pipeline đều do một người
-> đảm nhiệm.
+| Thành viên | MSSV | Phụ trách |
+|---|---|---|
+| Trần Bá Đạt | 2A202600778 | Xây dựng API (FastAPI, tích hợp pipeline RAG, deploy backend) |
+| Nguyễn Thành Đạt | 2A202600771 | Xử lý dữ liệu (thu thập, chuẩn hoá, chunking, indexing vào vector store) |
+| Nguyễn Thị Bảo Trân | 2A202600917 | Thiết kế giao diện web (UX/UI), viết báo cáo |
 
 ---
 

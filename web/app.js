@@ -21,15 +21,31 @@ function avatarClass(r) { return r==='admin'?'role-admin':r==='viewer'?'role-vie
 let state = {
   theme:'light', currentUser:null, userEditId:null,
   messages:[], isTyping:false, chatStarted:false,
-  sessions:[
-    {id:1, title:'Hình phạt tội vận chuyển ma tuý'},
-    {id:2, title:'Quy trình cai nghiện bắt buộc'},
-    {id:3, title:'Xử phạt hành chính sử dụng ma tuý'},
-    {id:4, title:'Phân loại chất ma tuý Danh mục I'},
-    {id:5, title:'Quyền người sau cai nghiện'},
-  ],
+  sessions:[],
   activeSession:null,
 };
+
+// ── Conversation history persistence (per user) ──────────────────────────────
+function sessionsKey() { return state.currentUser ? `luatmatuy-sessions-${state.currentUser.id}` : null; }
+function loadSessions() {
+  const key=sessionsKey(); if(!key) return [];
+  try { const s=JSON.parse(localStorage.getItem(key)); return Array.isArray(s)?s:[]; } catch { return []; }
+}
+function saveSessions() {
+  const key=sessionsKey(); if(!key) return;
+  localStorage.setItem(key, JSON.stringify(state.sessions));
+}
+function sessionTitleFromText(text) {
+  const t=text.trim().replace(/\s+/g,' ');
+  return t.length>48 ? t.slice(0,48)+'…' : t;
+}
+function persistActiveSession() {
+  if(state.activeSession==null) return;
+  const session=state.sessions.find(s=>s.id===state.activeSession);
+  if(!session) return;
+  session.messages=state.messages.slice();
+  saveSessions();
+}
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -51,10 +67,10 @@ function init() {
   const savedTheme = localStorage.getItem('luatmatuy-theme') || 'light';
   state.theme = savedTheme;
   applyTheme(savedTheme, true);
-  buildHistory();
   attachEvents();
   autoResize(textarea);
   if (checkSession()) { hideAuthScreen(); updateTopbarUser(); }
+  buildHistory();
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -68,24 +84,28 @@ function applyTheme(t, instant=false) {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 function checkSession() {
-  try { const s=JSON.parse(localStorage.getItem('luatmatuy-session')); if(!s) return false; const u=loadUsers().find(x=>x.id===s.id); if(!u||u.status==='inactive') return false; state.currentUser=u; return true; } catch{return false;}
+  try { const s=JSON.parse(localStorage.getItem('luatmatuy-session')); if(!s) return false; const u=loadUsers().find(x=>x.id===s.id); if(!u||u.status==='inactive') return false; state.currentUser=u; state.sessions=loadSessions(); state.activeSession=null; return true; } catch{return false;}
 }
 function loginUser(email,password) {
   const u=loadUsers().find(u=>u.email.toLowerCase()===email.toLowerCase()&&u.password===password);
   if(!u) throw new Error('Email hoặc mật khẩu không đúng.');
   if(u.status==='inactive') throw new Error('Tài khoản này đã bị vô hiệu hóa.');
-  state.currentUser=u; localStorage.setItem('luatmatuy-session',JSON.stringify(u)); return u;
+  state.currentUser=u; localStorage.setItem('luatmatuy-session',JSON.stringify(u));
+  state.sessions=loadSessions(); state.activeSession=null;
+  return u;
 }
 function registerUser(name,email,password) {
   const users=loadUsers();
   if(users.find(u=>u.email.toLowerCase()===email.toLowerCase())) throw new Error('Email này đã được đăng ký.');
   const nu={id:Date.now(),name,email,password,role:'user',joined:new Date().toISOString().slice(0,10),status:'active'};
   users.push(nu); saveUsers(users); state.currentUser=nu;
-  localStorage.setItem('luatmatuy-session',JSON.stringify(nu)); return nu;
+  localStorage.setItem('luatmatuy-session',JSON.stringify(nu));
+  state.sessions=[]; state.activeSession=null;
+  return nu;
 }
 function logoutUser() {
   state.currentUser=null; localStorage.removeItem('luatmatuy-session');
-  state.chatStarted=false; state.messages=[];
+  state.chatStarted=false; state.messages=[]; state.sessions=[]; state.activeSession=null;
   msgContainer.innerHTML='';
   welcomeScr.style.display=''; msgContainer.style.display='none';
   buildHistory(); showAuthScreen();
@@ -118,7 +138,7 @@ function attachEvents() {
     const email=$('loginEmail').value.trim(); const pass=$('loginPassword').value;
     const err=$('loginError'); err.textContent='';
     if(!email||!pass){err.textContent='Vui lòng điền đầy đủ thông tin.';return;}
-    try { loginUser(email,pass); hideAuthScreen(); updateTopbarUser(); }
+    try { loginUser(email,pass); hideAuthScreen(); updateTopbarUser(); buildHistory(); }
     catch(e){err.textContent=e.message;}
   });
 
@@ -130,7 +150,7 @@ function attachEvents() {
     if(!name||!email||!pass||!conf){err.textContent='Vui lòng điền đầy đủ thông tin.';return;}
     if(pass.length<6){err.textContent='Mật khẩu phải có ít nhất 6 ký tự.';return;}
     if(pass!==conf){err.textContent='Mật khẩu xác nhận không khớp.';return;}
-    try { registerUser(name,email,pass); hideAuthScreen(); updateTopbarUser(); }
+    try { registerUser(name,email,pass); hideAuthScreen(); updateTopbarUser(); buildHistory(); }
     catch(e){err.textContent=e.message;}
   });
 
@@ -216,11 +236,12 @@ function buildHistory() {
 }
 
 function loadSession(session) {
+  if(state.activeSession===session.id){ closeSidebar(); return; }
   state.activeSession=session.id; state.chatStarted=true;
+  state.messages=(session.messages||[]).slice();
   welcomeScr.style.display='none'; msgContainer.style.display='';
   msgContainer.innerHTML='';
-  addMessage('user',`Cho tôi biết về: ${escapeHTML(session.title)}`);
-  setTimeout(()=>callChatAPI(`Cho tôi biết về: ${session.title}`),300);
+  state.messages.forEach(m=>renderMessage(m.role, m.content));
   buildHistory(); closeSidebar();
 }
 
@@ -228,7 +249,12 @@ function loadSession(session) {
 function sendMessage() {
   const text=textarea.value.trim();
   if(!text||state.isTyping)return;
-  if(!state.chatStarted){ state.chatStarted=true; welcomeScr.style.display='none'; msgContainer.style.display=''; }
+  if(!state.chatStarted){
+    state.chatStarted=true; welcomeScr.style.display='none'; msgContainer.style.display='';
+    const session={id:Date.now(), title:sessionTitleFromText(text), messages:[]};
+    state.sessions.unshift(session); state.activeSession=session.id; state.messages=[];
+    saveSessions(); buildHistory();
+  }
   addMessage('user',escapeHTML(text));
   textarea.value=''; sendBtn.disabled=true; autoResize(textarea);
   callChatAPI(text);
@@ -333,6 +359,12 @@ function formatLegalResponse(text) {
 
 // ── Message rendering ─────────────────────────────────────────────────────────
 function addMessage(role, html, rawText='') {
+  renderMessage(role, html);
+  state.messages.push({role, content:html, rawText});
+  persistActiveSession();
+}
+
+function renderMessage(role, html) {
   const row=document.createElement('div');
   row.className=`message-row ${role}`;
   const now=new Date().toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
@@ -356,7 +388,6 @@ function addMessage(role, html, rawText='') {
     </div>`;
   msgContainer.appendChild(row);
   scrollBottom();
-  state.messages.push({role, content:html, rawText});
 }
 
 function addAIResponse(html, rawText) { addMessage('ai',html,rawText); }
