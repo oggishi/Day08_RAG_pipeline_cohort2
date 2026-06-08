@@ -34,6 +34,7 @@ jobs:
           cp -r src /tmp/space/
           cp -r api /tmp/space/
           cp -r data/standardized /tmp/space/data/
+          rm -rf /tmp/space/data/standardized/_pageindex_pdf_cache
           cp requirements.txt Dockerfile /tmp/space/
           cp api/SPACE_README.md /tmp/space/README.md
 
