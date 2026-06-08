@@ -6,7 +6,7 @@ name: Deploy backend to Hugging Face Space
 #
 # Yêu cầu cấu hình trước (xem README phần "Manual setup"):
 #   - Secret HF_TOKEN: access token của Hugging Face (quyền write vào Space)
-#   - Variable HF_SPACE: "username/space-name" của Space đã tạo (SDK: Docker)
+#   - Secret HF_SPACE: "username/space-name" của Space đã tạo (SDK: Docker)
 #   - Trong Space settings, set các secret: OPENAI_API_KEY, WEAVIATE_URL,
 #     WEAVIATE_API_KEY, PAGEINDEX_API_KEY, JINA_API_KEY
 
@@ -40,7 +40,7 @@ jobs:
       - name: Push to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_SPACE: ${{ vars.HF_SPACE }}
+          HF_SPACE: ${{ secrets.HF_SPACE }}
         run: |
           cd /tmp/space
           git init -q
