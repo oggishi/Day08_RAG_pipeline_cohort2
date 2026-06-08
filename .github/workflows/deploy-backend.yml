@@ -38,6 +38,13 @@ jobs:
           cp requirements.txt Dockerfile /tmp/space/
           cp api/SPACE_README.md /tmp/space/README.md
 
+      - name: Debug HF_SPACE secret (temporary)
+        env:
+          HF_SPACE: ${{ secrets.HF_SPACE }}
+        run: |
+          echo "HF_SPACE length: ${#HF_SPACE} (expect 13 for 'oggishi/Lab08')"
+          printf '%s' "$HF_SPACE" | od -An -c | head -5
+
       - name: Push to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
