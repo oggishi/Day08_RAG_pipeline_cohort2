@@ -35,16 +35,65 @@ STANDARDIZED_DIR = Path(__file__).parent.parent / "data" / "standardized"
 # CONFIGURATION — Giải thích lựa chọn của bạn trong comment
 # =============================================================================
 
-# TODO: Chọn chunking strategy và giải thích vì sao
-CHUNK_SIZE = 500        # Vì sao chọn 500? ...
-CHUNK_OVERLAP = 50      # Vì sao chọn 50? ...
+# --- Chunking: RecursiveCharacterTextSplitter với separator tùy biến cho VBPL 
+# Lý do KHÔNG chọn MarkdownHeaderTextSplitter: MarkItDown convert .docx/.pdf
+# luật ra "**Điều 1. ...**", "**Chương I**" — chữ in đậm chứ KHÔNG phải heading
+# Markdown thật (#, ##), nên splitter theo header sẽ không nhận diện được ranh giới.
+# Lý do KHÔNG chọn SemanticChunker: cần gọi embedding cho từng câu để dò ranh giới
+# ngữ nghĩa -> chậm, tốn tài nguyên và kết quả không ổn định (non-deterministic),
+# không cần thiết với văn bản pháp luật vốn đã có cấu trúc tường minh theo
+# Chương/Điều/Khoản/Điểm.
+# => Dùng RecursiveCharacterTextSplitter, khai báo thêm separator ưu tiên ranh
+# giới "Chương" và "Điều" (xem mảng separators bên dưới). Mỗi Điều là một đơn vị
+# pháp lý độc lập về ngữ nghĩa (quy định trọn vẹn một vấn đề), nên ưu tiên cắt
+# tại ranh giới này giúp chunk giữ nguyên ngữ cảnh pháp lý, tránh bị cắt giữa
+# chừng một quy định.
 CHUNKING_METHOD = "recursive"  # "recursive" | "markdown_header" | "semantic"
 
-# TODO: Chọn embedding model và giải thích
-EMBEDDING_MODEL = "BAAI/bge-m3"  # Vì sao? Multilingual, tốt cho tiếng Việt
+# Khảo sát thực tế trong data/standardized/legal/*.md: độ dài trung bình của
+# một "Điều" là ~1400-2150 ký tự (có Điều dài tới ~24.000 ký tự do chứa bảng/
+# danh mục). Chọn CHUNK_SIZE=1000 để: (1) phần lớn các Điều ngắn/vừa nằm gọn
+# trong 1 chunk (giữ trọn ngữ nghĩa pháp lý), (2) các Điều dài vẫn được chia
+# nhỏ tại ranh giới đoạn/câu thay vì cắt ngang một từ.
+# 1000 ký tự tiếng Việt cũng nằm rất an toàn trong context window của bge-m3
+# (8192 token) nên không lo mất thông tin khi embed.
+CHUNK_SIZE = 1000
+
+# CHUNK_OVERLAP=100 (10% của CHUNK_SIZE): đủ để câu/đoạn bị cắt ở ranh giới
+# chunk vẫn xuất hiện trọn vẹn ở chunk liền kề — quan trọng với văn bản luật vì
+# các câu thường tham chiếu chéo (vd. "quy định tại khoản 2 Điều này") và nếu
+# bị cắt rời sẽ làm giảm chất lượng retrieval. Overlap quá lớn sẽ gây trùng lặp
+# và lãng phí số lượng vector phải lưu/tính.
+CHUNK_OVERLAP = 100
+
+# --- Embedding: BAAI/bge-m3 -------------------------------------------------
+# Lý do chọn bge-m3 thay vì all-MiniLM-L6-v2 hay OpenAI text-embedding-3-small:
+#   1. Multilingual & tối ưu cho tiếng Việt: all-MiniLM-L6-v2 chủ yếu train trên
+#      tiếng Anh, chất lượng embedding tiếng Việt (đặc biệt văn bản pháp luật
+#      nhiều từ Hán-Việt, thuật ngữ chuyên ngành) kém hơn đáng kể so với bge-m3.
+#   2. Hỗ trợ context dài (8192 token) — phù hợp với các "Điều" luật dài, hạn
+#      chế phải cắt nhỏ quá mức làm vỡ ngữ cảnh.
+#   3. Hỗ trợ multi-functionality (dense + sparse + ColBERT) — về sau có thể
+#      tận dụng cho hybrid search trong Weaviate mà không cần đổi model.
+#   4. Chạy local/open-source: dữ liệu là văn bản pháp luật/tin tức nội bộ,
+#      không cần gửi qua API bên thứ ba (như OpenAI) — vừa tiết kiệm chi phí
+#      vừa tránh rủi ro rò rỉ dữ liệu.
+EMBEDDING_MODEL = "BAAI/bge-m3"
 EMBEDDING_DIM = 1024
 
-# TODO: Chọn vector store
+# --- Vector store: Weaviate --------------------------------------------------
+# Lý do chọn Weaviate thay vì ChromaDB hay FAISS:
+#   1. Hybrid search built-in (BM25 + vector, kết hợp qua alpha): với văn bản
+#      pháp luật, người dùng thường tra theo từ khóa chính xác (số Điều, tên
+#      Nghị định, thuật ngữ định danh như "tiền chất", "ma túy tổng hợp") —
+#      thuần dense vector search (FAISS) dễ bỏ sót các match từ khóa chính xác
+#      này, trong khi BM25 lại không hiểu ngữ nghĩa. Hybrid search giải quyết
+#      tốt cả hai nhu cầu.
+#   2. Lưu kèm metadata (source, doc_type, chunk_index) và filter native theo
+#      thuộc tính — ví dụ chỉ tìm trong "legal" hoặc chỉ trong "news".
+#   3. FAISS chỉ là thư viện index thuần túy (không filter, không lưu metadata,
+#      không hybrid) -> phải tự xây thêm lớp lưu trữ/metadata; ChromaDB đơn
+#      giản hơn nhưng hybrid search còn hạn chế so với Weaviate.
 VECTOR_STORE = "weaviate"  # "weaviate" | "chromadb" | "faiss"
 
 
@@ -59,17 +108,15 @@ def load_documents() -> list[dict]:
     Returns:
         List of {'content': str, 'metadata': {'source': str, 'type': str}}
     """
-    # TODO: Iterate qua STANDARDIZED_DIR, đọc .md files
-    # documents = []
-    # for md_file in STANDARDIZED_DIR.rglob("*.md"):
-    #     content = md_file.read_text(encoding="utf-8")
-    #     doc_type = "legal" if "legal" in str(md_file) else "news"
-    #     documents.append({
-    #         "content": content,
-    #         "metadata": {"source": md_file.name, "type": doc_type}
-    #     })
-    # return documents
-    raise NotImplementedError("Implement load_documents")
+    documents = []
+    for md_file in STANDARDIZED_DIR.rglob("*.md"):
+        content = md_file.read_text(encoding="utf-8")
+        doc_type = "legal" if "legal" in str(md_file) else "news"
+        documents.append({
+            "content": content,
+            "metadata": {"source": md_file.name, "type": doc_type},
+        })
+    return documents
 
 
 def chunk_documents(documents: list[dict]) -> list[dict]:
@@ -79,26 +126,31 @@ def chunk_documents(documents: list[dict]) -> list[dict]:
     Returns:
         List of {'content': str, 'metadata': dict} — mỗi item là 1 chunk
     """
-    # TODO: Implement chunking
-    #
-    # Ví dụ với RecursiveCharacterTextSplitter:
-    # from langchain_text_splitters import RecursiveCharacterTextSplitter
-    #
-    # splitter = RecursiveCharacterTextSplitter(
-    #     chunk_size=CHUNK_SIZE,
-    #     chunk_overlap=CHUNK_OVERLAP,
-    #     separators=["\n\n", "\n", ". ", " ", ""]
-    # )
-    # chunks = []
-    # for doc in documents:
-    #     splits = splitter.split_text(doc["content"])
-    #     for i, chunk_text in enumerate(splits):
-    #         chunks.append({
-    #             "content": chunk_text,
-    #             "metadata": {**doc["metadata"], "chunk_index": i}
-    #         })
-    # return chunks
-    raise NotImplementedError("Implement chunk_documents")
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        separators=[
+            "\n\n**Chương",  # ranh giới Chương — đơn vị lớn nhất, ưu tiên cắt trước
+            "\n\n**Điều",    # ranh giới Điều — đơn vị pháp lý độc lập về ngữ nghĩa
+            "\n\n",          # ranh giới đoạn / khoản
+            "\n",            # ranh giới dòng / điểm (a, b, c...)
+            ". ",            # ranh giới câu
+            " ",
+            "",
+        ],
+    )
+
+    chunks = []
+    for doc in documents:
+        splits = splitter.split_text(doc["content"])
+        for i, chunk_text in enumerate(splits):
+            chunks.append({
+                "content": chunk_text,
+                "metadata": {**doc["metadata"], "chunk_index": i},
+            })
+    return chunks
 
 
 def embed_chunks(chunks: list[dict]) -> list[dict]:
@@ -108,51 +160,63 @@ def embed_chunks(chunks: list[dict]) -> list[dict]:
     Returns:
         Mỗi chunk dict được thêm key 'embedding': list[float]
     """
-    # TODO: Implement embedding
-    #
-    # Ví dụ với sentence-transformers:
-    # from sentence_transformers import SentenceTransformer
-    #
-    # model = SentenceTransformer(EMBEDDING_MODEL)
-    # texts = [c["content"] for c in chunks]
-    # embeddings = model.encode(texts, show_progress_bar=True)
-    # for chunk, emb in zip(chunks, embeddings):
-    #     chunk["embedding"] = emb.tolist()
-    # return chunks
-    raise NotImplementedError("Implement embed_chunks")
+    from sentence_transformers import SentenceTransformer
+
+    model = SentenceTransformer(EMBEDDING_MODEL)
+    texts = [c["content"] for c in chunks]
+    # normalize_embeddings=True -> dùng cosine similarity khi search trong
+    # vector store (Weaviate mặc định so khớp bằng cosine distance).
+    embeddings = model.encode(texts, show_progress_bar=True, normalize_embeddings=True)
+    for chunk, emb in zip(chunks, embeddings):
+        chunk["embedding"] = emb.tolist()
+    return chunks
 
 
 def index_to_vectorstore(chunks: list[dict]):
     """
     Lưu chunks vào vector store đã chọn.
     """
-    # TODO: Implement indexing
-    #
-    # Ví dụ với Weaviate:
-    # import weaviate
-    # from weaviate.classes.config import Configure, Property, DataType
-    #
-    # client = weaviate.connect_to_local()  # hoặc connect_to_weaviate_cloud()
-    #
-    # # Tạo collection
-    # collection = client.collections.create(
-    #     name="DrugLawDocs",
-    #     vectorizer_config=Configure.Vectorizer.none(),
-    #     properties=[
-    #         Property(name="content", data_type=DataType.TEXT),
-    #         Property(name="source", data_type=DataType.TEXT),
-    #         Property(name="doc_type", data_type=DataType.TEXT),
-    #     ]
-    # )
-    #
-    # # Insert chunks
-    # with collection.batch.dynamic() as batch:
-    #     for chunk in chunks:
-    #         batch.add_object(
-    #             properties={"content": chunk["content"], ...},
-    #             vector=chunk["embedding"]
-    #         )
-    raise NotImplementedError("Implement index_to_vectorstore")
+    import weaviate
+    from weaviate.classes.config import Configure, DataType, Property
+
+    collection_name = "DrugLawDocs"
+
+    # connect_to_local() yêu cầu một Weaviate instance đang chạy ở localhost
+    # (vd. `docker run -p 8080:8080 -p 50051:50051 cr.weaviate.io/semitechnologies/weaviate:latest`)
+    client = weaviate.connect_to_local()
+    try:
+        if client.collections.exists(collection_name):
+            collection = client.collections.get(collection_name)
+        else:
+            collection = client.collections.create(
+                name=collection_name,
+                # Ta tự tính embedding (bge-m3) nên tắt vectorizer mặc định của
+                # Weaviate và truyền thẳng vector khi insert.
+                vectorizer_config=Configure.Vectorizer.none(),
+                properties=[
+                    Property(name="content", data_type=DataType.TEXT),
+                    Property(name="source", data_type=DataType.TEXT),
+                    Property(name="doc_type", data_type=DataType.TEXT),
+                    Property(name="chunk_index", data_type=DataType.INT),
+                ],
+            )
+
+        with collection.batch.dynamic() as batch:
+            for chunk in chunks:
+                batch.add_object(
+                    properties={
+                        "content": chunk["content"],
+                        "source": chunk["metadata"]["source"],
+                        "doc_type": chunk["metadata"]["type"],
+                        "chunk_index": chunk["metadata"]["chunk_index"],
+                    },
+                    vector=chunk["embedding"],
+                )
+
+        if collection.batch.failed_objects:
+            print(f"  ⚠ {len(collection.batch.failed_objects)} object(s) failed to index")
+    finally:
+        client.close()
 
 
 def run_pipeline():

@@ -15,28 +15,57 @@ BM25 hoạt động thế nào:
     - k1=1.5 (term saturation), b=0.75 (length normalization)
 """
 
+import re
 from pathlib import Path
 
-# TODO: Load corpus từ data/standardized/ hoặc từ vector store
+from rank_bm25 import BM25Okapi
+from underthesea import word_tokenize
+
+from .task4_chunking_indexing import chunk_documents, load_documents
+
+# Corpus dùng chung 1 cách chunk với Task 4 (load_documents + chunk_documents)
+# để lexical search và semantic search trả về cùng đơn vị "chunk" — cần thiết
+# nếu sau này kết hợp 2 kết quả thành hybrid search (so điểm/merge theo chunk).
 CORPUS: list[dict] = []  # List of {'content': str, 'metadata': dict}
 
+# BM25 index được build 1 lần và tái sử dụng — tránh tokenize + tính lại toàn
+# bộ corpus cho mỗi query.
+_bm25_index: BM25Okapi | None = None
 
-def build_bm25_index(corpus: list[dict]):
+
+def _load_corpus() -> list[dict]:
+    global CORPUS
+    if not CORPUS:
+        CORPUS = chunk_documents(load_documents())
+    return CORPUS
+
+
+def _tokenize(text: str) -> list[str]:
+    """
+    Tokenize tiếng Việt bằng underthesea.word_tokenize thay vì split() đơn
+    thuần: tiếng Việt là ngôn ngữ đơn lập, nhiều từ ghép gồm 2+ âm tiết cách
+    nhau bởi khoảng trắng (vd. "ma túy", "tàng trữ", "trái phép"). split() sẽ
+    tách rời các âm tiết này thành token riêng lẻ, làm BM25 đánh giá sai
+    TF/IDF (so khớp từng âm tiết chung chung thay vì khái niệm trọn vẹn).
+    underthesea.word_tokenize gộp các âm tiết thành 1 token từ ghép duy nhất
+    (vd. "tàng trữ", "trái phép" → mỗi cụm là 1 phần tử trong list trả về),
+    giúp BM25 khớp đúng thuật ngữ pháp lý/chuyên ngành trọn vẹn thay vì so
+    từng âm tiết rời rạc.
+    """
+    tokens = word_tokenize(text.lower())
+    # Loại token chỉ gồm dấu câu/khoảng trắng (không chứa ký tự chữ/số)
+    return [t for t in tokens if re.search(r"\w", t, flags=re.UNICODE)]
+
+
+def build_bm25_index(corpus: list[dict]) -> BM25Okapi:
     """
     Xây dựng BM25 index từ corpus.
 
     Args:
         corpus: List of {'content': str, 'metadata': dict}
     """
-    # TODO: Implement BM25 index
-    #
-    # from rank_bm25 import BM25Okapi
-    #
-    # # Tokenize - cho tiếng Việt nên dùng underthesea hoặc đơn giản split()
-    # tokenized_corpus = [doc["content"].lower().split() for doc in corpus]
-    # bm25 = BM25Okapi(tokenized_corpus)
-    # return bm25
-    raise NotImplementedError("Implement build_bm25_index")
+    tokenized_corpus = [_tokenize(doc["content"]) for doc in corpus]
+    return BM25Okapi(tokenized_corpus)
 
 
 def lexical_search(query: str, top_k: int = 10) -> list[dict]:
@@ -55,25 +84,28 @@ def lexical_search(query: str, top_k: int = 10) -> list[dict]:
         }
         Sorted by score descending.
     """
-    # TODO: Implement lexical search
-    #
-    # tokenized_query = query.lower().split()
-    # scores = bm25.get_scores(tokenized_query)
-    #
-    # # Get top_k indices
-    # import numpy as np
-    # top_indices = np.argsort(scores)[::-1][:top_k]
-    #
-    # results = []
-    # for idx in top_indices:
-    #     if scores[idx] > 0:
-    #         results.append({
-    #             "content": CORPUS[idx]["content"],
-    #             "score": float(scores[idx]),
-    #             "metadata": CORPUS[idx]["metadata"]
-    #         })
-    # return results
-    raise NotImplementedError("Implement lexical_search")
+    global _bm25_index
+
+    corpus = _load_corpus()
+    if _bm25_index is None:
+        _bm25_index = build_bm25_index(corpus)
+
+    tokenized_query = _tokenize(query)
+    scores = _bm25_index.get_scores(tokenized_query)
+
+    import numpy as np
+
+    top_indices = np.argsort(scores)[::-1][:top_k]
+
+    results = []
+    for idx in top_indices:
+        if scores[idx] > 0:
+            results.append({
+                "content": corpus[idx]["content"],
+                "score": float(scores[idx]),
+                "metadata": corpus[idx]["metadata"],
+            })
+    return results
 
 
 if __name__ == "__main__":

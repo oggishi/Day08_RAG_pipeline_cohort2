@@ -12,6 +12,8 @@ Logic:
     5. Return top_k results
 """
 
+from concurrent.futures import ThreadPoolExecutor
+
 from .task5_semantic_search import semantic_search
 from .task6_lexical_search import lexical_search
 from .task7_reranking import rerank, rerank_rrf
@@ -61,32 +63,49 @@ def retrieve(
             'source': str  # 'hybrid' hoặc 'pageindex'
         }
     """
-    # TODO: Implement full retrieval pipeline
-    #
-    # Step 1: Song song chạy semantic + lexical
-    # dense_results = semantic_search(query, top_k=top_k * 2)
-    # sparse_results = lexical_search(query, top_k=top_k * 2)
-    #
-    # Step 2: Merge bằng RRF
-    # merged = rerank_rrf([dense_results, sparse_results], top_k=top_k * 2)
-    # for item in merged:
-    #     item["source"] = "hybrid"
-    #
-    # Step 3: Rerank
-    # if use_reranking and merged:
-    #     final_results = rerank(query, merged, top_k=top_k, method=RERANK_METHOD)
-    # else:
-    #     final_results = merged[:top_k]
-    #
-    # Step 4: Check threshold → fallback
-    # if not final_results or final_results[0]["score"] < score_threshold:
-    #     print(f"  ⚠ Hybrid score ({final_results[0]['score']:.3f} if final_results else 0}) "
-    #           f"< threshold ({score_threshold}). Fallback → PageIndex")
-    #     fallback = pageindex_search(query, top_k=top_k)
-    #     return fallback
-    #
-    # return final_results[:top_k]
-    raise NotImplementedError("Implement retrieve")
+    # Step 1: chạy semantic + lexical song song. Cả 2 đều là tác vụ blocking
+    # độc lập (encode query + query Weaviate vs tokenize + tính BM25 trên
+    # corpus) — chạy đồng thời bằng thread pool giúp giảm tổng độ trễ thay vì
+    # chờ tuần tự (I/O- và phần lớn tính toán bên dưới đều giải phóng GIL).
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        dense_future = executor.submit(semantic_search, query, top_k * 2)
+        sparse_future = executor.submit(lexical_search, query, top_k * 2)
+        dense_results = dense_future.result()
+        sparse_results = sparse_future.result()
+
+    # Step 2: merge bằng RRF — 2 ranker có thang điểm KHÔNG so sánh được trực
+    # tiếp (cosine similarity ∈ [0,1] vs BM25 score không chặn trên), RRF chỉ
+    # dựa vào thứ hạng nên gộp được mà không cần chuẩn hoá điểm (cơ chế chi
+    # tiết xem rerank_rrf ở Task 7).
+    merged = rerank_rrf([dense_results, sparse_results], top_k=top_k * 2)
+    for item in merged:
+        item["source"] = "hybrid"
+
+    # Step 3: rerank để tăng độ chính xác của top-k cuối — cross-encoder đọc
+    # trực tiếp (query, content) nên xếp hạng chuẩn hơn nhiều so với điểm RRF
+    # (vốn chỉ phản ánh thứ hạng thô từ 2 ranker, chưa "hiểu" nội dung).
+    if use_reranking and merged:
+        final_results = rerank(query, merged, top_k=top_k, method=RERANK_METHOD)
+        for item in final_results:
+            item.setdefault("source", "hybrid")
+    else:
+        final_results = merged[:top_k]
+
+    # Step 4: nếu kết quả hybrid không đủ tin cậy (rỗng, hoặc điểm cao nhất
+    # dưới ngưỡng) → fallback sang PageIndex. Đây là các trường hợp semantic +
+    # lexical đều "đuối" — thường là câu hỏi đòi hỏi suy luận xuyên nhiều phần
+    # văn bản (vd. tổng hợp quy định từ nhiều Điều/Chương) mà retrieval theo
+    # similarity/từ khoá khó nắm bắt — PageIndex (reasoning-based, vectorless)
+    # phù hợp hơn cho những ca này.
+    best_score = final_results[0]["score"] if final_results else 0.0
+    if not final_results or best_score < score_threshold:
+        print(
+            f"  ⚠ Hybrid score ({best_score:.3f}) < threshold "
+            f"({score_threshold}). Fallback → PageIndex"
+        )
+        return pageindex_search(query, top_k=top_k)
+
+    return final_results[:top_k]
 
 
 if __name__ == "__main__":

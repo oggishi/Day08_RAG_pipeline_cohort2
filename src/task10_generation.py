@@ -75,20 +75,25 @@ def reorder_for_llm(chunks: list[dict]) -> list[dict]:
     Returns:
         List reordered để maximize LLM attention.
     """
-    # TODO: Implement reordering
+    if len(chunks) <= 2:
+        return chunks
+
+    # chunks đã sorted theo score giảm dần (rank 1 = tốt nhất). Tách thành 2
+    # nhóm theo vị trí (1-based): lẻ (1, 3, 5, ...) và chẵn (2, 4, 6, ...).
+    #   - Nhóm lẻ giữ nguyên thứ tự, đặt ở ĐẦU → rank 1 (tốt nhất) nằm vị trí
+    #     đầu tiên, nơi LLM chú ý nhiều nhất.
+    #   - Nhóm chẵn đảo ngược thứ tự, đặt ở CUỐI → rank 2 (tốt nhì) rơi xuống
+    #     vị trí cuối cùng, nơi LLM chú ý nhiều thứ nhì; các rank kém hơn
+    #     (4, 6, ...) bị đẩy vào giữa — đúng với hiệu ứng "lost in the middle"
+    #     (LLM nhớ tốt đầu/cuối, dễ bỏ sót phần giữa prompt dài).
     #
-    # if len(chunks) <= 2:
-    #     return chunks
-    #
-    # # Split into first half (important → đầu) and second half (important → cuối)
-    # reordered = []
-    # for i in range(0, len(chunks), 2):
-    #     reordered.append(chunks[i])  # Odd positions go first
-    # for i in range(len(chunks) - 1 - (len(chunks) % 2 == 0), 0, -2):
-    #     reordered.append(chunks[i])  # Even positions go last (reversed)
-    #
-    # return reordered
-    raise NotImplementedError("Implement reorder_for_llm")
+    # Ví dụ [1,2,3,4,5]: lẻ=[1,3,5], chẵn=[2,4] → đảo=[4,2]
+    #        → kết quả [1,3,5,4,2]  (khớp đúng docstring)
+    odd_positions = chunks[0::2]
+    even_positions = chunks[1::2]
+    even_positions.reverse()
+
+    return odd_positions + even_positions
 
 
 # =============================================================================
@@ -106,18 +111,19 @@ def format_context(chunks: list[dict]) -> str:
     Returns:
         Formatted context string.
     """
-    # TODO: Implement context formatting
-    #
-    # context_parts = []
-    # for i, chunk in enumerate(chunks, 1):
-    #     source = chunk.get("metadata", {}).get("source", f"Source {i}")
-    #     doc_type = chunk.get("metadata", {}).get("type", "unknown")
-    #     context_parts.append(
-    #         f"[Document {i} | Source: {source} | Type: {doc_type}]\n"
-    #         f"{chunk['content']}\n"
-    #     )
-    # return "\n---\n".join(context_parts)
-    raise NotImplementedError("Implement format_context")
+    context_parts = []
+    for i, chunk in enumerate(chunks, 1):
+        metadata = chunk.get("metadata", {})
+        source = metadata.get("source", f"Source {i}")
+        # Khoá "doc_type" (không phải "type") — đúng với schema metadata được
+        # tạo ở load_documents()/index_to_vectorstore() (Task 4) và trả về
+        # nguyên trạng qua semantic_search/lexical_search/pageindex_search.
+        doc_type = metadata.get("doc_type", "unknown")
+        context_parts.append(
+            f"[Document {i} | Source: {source} | Type: {doc_type}]\n"
+            f"{chunk['content']}\n"
+        )
+    return "\n---\n".join(context_parts)
 
 
 # =============================================================================
@@ -146,43 +152,57 @@ def generate_with_citation(query: str, top_k: int = TOP_K) -> dict:
             'retrieval_source': str  # 'hybrid' hoặc 'pageindex'
         }
     """
-    # TODO: Implement generation pipeline
-    #
-    # # Step 1: Retrieve
-    # chunks = retrieve(query, top_k=top_k)
-    #
-    # # Step 2: Reorder
-    # reordered = reorder_for_llm(chunks)
-    #
-    # # Step 3: Format context
-    # context = format_context(reordered)
-    #
-    # # Step 4: Build prompt
-    # user_message = f"""Context:\n{context}\n\n---\n\nQuestion: {query}"""
-    #
-    # # Step 5: Call LLM
-    # from openai import OpenAI
-    # client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    #
-    # response = client.chat.completions.create(
-    #     model="gpt-4o-mini",
-    #     messages=[
-    #         {"role": "system", "content": SYSTEM_PROMPT},
-    #         {"role": "user", "content": user_message}
-    #     ],
-    #     temperature=TEMPERATURE,
-    #     top_p=TOP_P,
-    # )
-    #
-    # answer = response.choices[0].message.content
-    #
-    # # Step 6: Return
-    # return {
-    #     "answer": answer,
-    #     "sources": chunks,
-    #     "retrieval_source": chunks[0].get("source", "hybrid") if chunks else "none"
-    # }
-    raise NotImplementedError("Implement generate_with_citation")
+    # Step 1: Retrieve — hybrid (semantic + lexical + rerank), tự fallback
+    # PageIndex nếu điểm thấp (logic đầy đủ ở Task 9).
+    chunks = retrieve(query, top_k=top_k)
+
+    if not chunks:
+        return {
+            "answer": "Tôi không thể xác minh thông tin này từ nguồn hiện có",
+            "sources": [],
+            "retrieval_source": "none",
+        }
+
+    # Step 2: Reorder để chunk quan trọng nhất nằm ở đầu/cuối context — giảm
+    # rủi ro LLM "bỏ sót" chunk quan trọng nằm giữa prompt dài.
+    reordered = reorder_for_llm(chunks)
+
+    # Step 3: Format context kèm label nguồn để LLM trích dẫn đúng theo
+    # [Document N | Source ...] — khớp với yêu cầu citation trong SYSTEM_PROMPT.
+    context = format_context(reordered)
+
+    # Step 4: Build prompt — tách rõ phần Context và Question để LLM phân biệt
+    # "evidence được cung cấp" với "câu hỏi cần trả lời", tránh nhầm lẫn khi
+    # trích dẫn.
+    user_message = f"""Context:\n{context}\n\n---\n\nQuestion: {query}"""
+
+    # Step 5: Gọi LLM — gpt-4o-mini: đủ mạnh để tổng hợp + trích dẫn chính xác
+    # với chi phí/độ trễ thấp, phù hợp tác vụ RAG factual (không cần model lớn
+    # nhất). temperature=0.3 & top_p=0.9 (xem giải thích ở phần CONFIGURATION)
+    # ưu tiên output bám sát evidence, hạn chế "sáng tạo"/hallucination.
+    from openai import OpenAI
+
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
+        temperature=TEMPERATURE,
+        top_p=TOP_P,
+    )
+
+    answer = response.choices[0].message.content
+
+    # Step 6: Trả về answer kèm sources gốc (thứ tự theo score, không phải
+    # thứ tự đã reorder) để người dùng/kiểm thử dễ đối chiếu độ liên quan thật.
+    return {
+        "answer": answer,
+        "sources": chunks,
+        "retrieval_source": chunks[0].get("source", "hybrid") if chunks else "none",
+    }
 
 
 if __name__ == "__main__":

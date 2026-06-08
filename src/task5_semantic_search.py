@@ -9,6 +9,26 @@ Yêu cầu:
     - Phải tương thích với embedding model và vector store ở Task 4
 """
 
+import weaviate
+from sentence_transformers import SentenceTransformer
+from weaviate.classes.query import MetadataQuery
+
+# Phải khớp với cấu hình ở Task 4 (cùng model để query vector nằm chung không
+# gian embedding với dữ liệu đã index, cùng tên collection để truy vấn đúng nơi).
+EMBEDDING_MODEL = "BAAI/bge-m3"
+COLLECTION_NAME = "DrugLawDocs"
+
+# Load model một lần và tái sử dụng giữa các lần gọi semantic_search — tránh
+# tốn thời gian/bộ nhớ load lại model cho mỗi query.
+_model: SentenceTransformer | None = None
+
+
+def _get_model() -> SentenceTransformer:
+    global _model
+    if _model is None:
+        _model = SentenceTransformer(EMBEDDING_MODEL)
+    return _model
+
 
 def semantic_search(query: str, top_k: int = 10) -> list[dict]:
     """
@@ -26,37 +46,35 @@ def semantic_search(query: str, top_k: int = 10) -> list[dict]:
         }
         Sorted by score descending.
     """
-    # TODO: Implement semantic search
-    #
-    # Bước 1: Embed query bằng cùng model ở Task 4
-    # Bước 2: Query vector store (cosine similarity)
-    # Bước 3: Return top_k results
-    #
-    # Ví dụ với Weaviate:
-    # import weaviate
-    # from sentence_transformers import SentenceTransformer
-    #
-    # model = SentenceTransformer("BAAI/bge-m3")
-    # query_embedding = model.encode(query).tolist()
-    #
-    # client = weaviate.connect_to_local()
-    # collection = client.collections.get("DrugLawDocs")
-    #
-    # results = collection.query.near_vector(
-    #     near_vector=query_embedding,
-    #     limit=top_k,
-    #     return_metadata=MetadataQuery(distance=True)
-    # )
-    #
-    # return [
-    #     {
-    #         "content": obj.properties["content"],
-    #         "score": 1 - obj.metadata.distance,  # distance → similarity
-    #         "metadata": {"source": obj.properties["source"], ...}
-    #     }
-    #     for obj in results.objects
-    # ]
-    raise NotImplementedError("Implement semantic_search")
+    model = _get_model()
+    # normalize_embeddings=True để khớp với cách embed chunk ở Task 4 — vector
+    # đã chuẩn hóa nên distance trả về của Weaviate (cosine distance) chuyển
+    # thẳng sang similarity bằng "1 - distance".
+    query_embedding = model.encode(query, normalize_embeddings=True).tolist()
+
+    client = weaviate.connect_to_local()
+    try:
+        collection = client.collections.get(COLLECTION_NAME)
+        results = collection.query.near_vector(
+            near_vector=query_embedding,
+            limit=top_k,
+            return_metadata=MetadataQuery(distance=True),
+        )
+
+        return [
+            {
+                "content": obj.properties["content"],
+                "score": 1 - obj.metadata.distance,
+                "metadata": {
+                    "source": obj.properties["source"],
+                    "doc_type": obj.properties["doc_type"],
+                    "chunk_index": obj.properties["chunk_index"],
+                },
+            }
+            for obj in results.objects
+        ]
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":
