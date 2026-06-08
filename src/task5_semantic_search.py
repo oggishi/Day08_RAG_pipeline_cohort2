@@ -9,9 +9,10 @@ Yêu cầu:
     - Phải tương thích với embedding model và vector store ở Task 4
 """
 
-import weaviate
 from sentence_transformers import SentenceTransformer
 from weaviate.classes.query import MetadataQuery
+
+from .weaviate_client import connect_weaviate
 
 # Phải khớp với cấu hình ở Task 4 (cùng model để query vector nằm chung không
 # gian embedding với dữ liệu đã index, cùng tên collection để truy vấn đúng nơi).
@@ -52,7 +53,7 @@ def semantic_search(query: str, top_k: int = 10) -> list[dict]:
     # thẳng sang similarity bằng "1 - distance".
     query_embedding = model.encode(query, normalize_embeddings=True).tolist()
 
-    client = weaviate.connect_to_local()
+    client = connect_weaviate()
     try:
         collection = client.collections.get(COLLECTION_NAME)
         results = collection.query.near_vector(

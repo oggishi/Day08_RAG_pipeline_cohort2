@@ -176,14 +176,17 @@ def index_to_vectorstore(chunks: list[dict]):
     """
     Lưu chunks vào vector store đã chọn.
     """
-    import weaviate
     from weaviate.classes.config import Configure, DataType, Property
+
+    from .weaviate_client import connect_weaviate
 
     collection_name = "DrugLawDocs"
 
-    # connect_to_local() yêu cầu một Weaviate instance đang chạy ở localhost
-    # (vd. `docker run -p 8080:8080 -p 50051:50051 cr.weaviate.io/semitechnologies/weaviate:latest`)
-    client = weaviate.connect_to_local()
+    # connect_weaviate() dùng Weaviate local (Docker) cho dev, hoặc Weaviate
+    # Cloud (qua WEAVIATE_URL/WEAVIATE_API_KEY trong .env) khi cần một cluster
+    # truy cập được từ xa — vd. để backend deploy (không chạy được Docker) có
+    # thể kết nối tới cùng dữ liệu đã index.
+    client = connect_weaviate()
     try:
         if client.collections.exists(collection_name):
             collection = client.collections.get(collection_name)
