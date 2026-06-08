@@ -238,7 +238,7 @@ function sendMessage() {
 // Backend FastAPI bọc pipeline RAG thật (Task 9 hybrid retrieval + Task 10
 // generation có citation) — xem api/main.py. Đổi URL này thành Hugging Face
 // Space sau khi deploy (xem .github/workflows/deploy-backend.yml).
-const API_BASE = 'https://huggingface.co/spaces/oggishi/Lab08';
+const API_BASE = 'https://oggishi-lab08.hf.space';
 
 async function callChatAPI(userText) {
   state.isTyping=true;

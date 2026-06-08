@@ -9,3 +9,7 @@ __pycache__/
 # Tooling caches
 .deepeval/
 
+# Temp staging folder for manual HF Space push
+hf_space_stage/
+*.log
+
