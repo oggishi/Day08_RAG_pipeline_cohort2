@@ -234,109 +234,38 @@ function sendMessage() {
   callChatAPI(text);
 }
 
-// ── Mock chat data (chạy hoàn toàn local — không gọi API nào, tránh đụng các
-// quota/API key bị giới hạn của OpenAI/Jina/PageIndex/Weaviate khi demo) ───────
-const MOCK_RESPONSES = [
-  {
-    keywords: ['tàng trữ'],
-    answer: `Theo pháp luật Việt Nam, hành vi tàng trữ trái phép chất ma tuý bị xử lý nghiêm khắc.
+// ── Chat backend API ──────────────────────────────────────────────────────────
+// Backend FastAPI bọc pipeline RAG thật (Task 9 hybrid retrieval + Task 10
+// generation có citation) — xem api/main.py. Đổi URL này thành Hugging Face
+// Space sau khi deploy (xem .github/workflows/deploy-backend.yml).
+const API_BASE = 'https://huggingface.co/spaces/oggishi/Lab08';
 
-**Quy định pháp luật**
-- Điều 249 BLHS 2015 (sửa đổi, bổ sung 2017) quy định về tội tàng trữ trái phép chất ma tuý.
-- Khối lượng, loại chất ma tuý và tình tiết tăng nặng là căn cứ để xác định khung hình phạt.
-
-**Chế tài / Hình phạt**
-1. Khung cơ bản: phạt tù từ 1 năm đến 5 năm.
-2. Khung tăng nặng (khối lượng lớn, tái phạm, có tổ chức...): phạt tù từ 5 năm đến 15 năm, thậm chí tù chung thân trong trường hợp đặc biệt nghiêm trọng.
-3. Ngoài hình phạt chính, người phạm tội có thể bị phạt tiền từ 5.000.000 đồng đến 100.000.000 đồng, cấm đảm nhiệm chức vụ, cấm hành nghề.
-
-**Lưu ý thực tiễn**
-- Cơ quan điều tra sẽ giám định khối lượng và loại chất ma tuý để xác định khung hình phạt áp dụng.
-- Người sử dụng trái phép chất ma tuý (không nhằm mục đích mua bán, tàng trữ với số lượng lớn) có thể được xem xét áp dụng biện pháp đưa vào cơ sở cai nghiện bắt buộc thay vì xử lý hình sự.`,
-    sources: [
-      { source: '120_2025_QH15_666019.md', doc_type: 'legal', score: 0.87 },
-      { source: '73luat.md', doc_type: 'legal', score: 0.75 },
-      { source: '105_2021_ND-CP_496664.md', doc_type: 'legal', score: 0.51 }
-    ]
-  },
-  {
-    keywords: ['mua bán', 'buôn bán', 'vận chuyển'],
-    answer: `Mua bán, vận chuyển trái phép chất ma tuý là một trong những nhóm tội phạm về ma tuý có khung hình phạt nghiêm khắc nhất trong Bộ luật Hình sự.
-
-**Quy định pháp luật**
-- Điều 251 BLHS 2015 (mua bán trái phép chất ma tuý) và Điều 250 (vận chuyển trái phép chất ma tuý) là các điều khoản chính được áp dụng.
-- Luật Phòng, chống ma tuý số 73/2021/QH14 quy định các nguyên tắc xử lý và phòng ngừa đối với nhóm hành vi này.
-
-**Chế tài / Hình phạt**
-1. Khung cơ bản: phạt tù từ 2 năm đến 7 năm.
-2. Khung tăng nặng theo khối lượng chất ma tuý: phạt tù từ 7 năm đến 20 năm.
-3. Trường hợp đặc biệt nghiêm trọng (khối lượng rất lớn, có tổ chức xuyên quốc gia...): tù chung thân hoặc tử hình.
-
-**Lưu ý thực tiễn**
-- Đây là tội danh không áp dụng án treo trong hầu hết trường hợp do tính chất nghiêm trọng.
-- Người liên quan nên tham vấn luật sư hình sự ngay từ giai đoạn điều tra để bảo đảm quyền lợi tố tụng.`,
-    sources: [
-      { source: '73luat.md', doc_type: 'legal', score: 0.83 },
-      { source: '120_2025_QH15_666019.md', doc_type: 'legal', score: 0.69 },
-      { source: 'article_02.md', doc_type: '', score: 0.41 }
-    ]
-  },
-  {
-    keywords: ['cai nghiện', 'giáo dục bắt buộc', 'cai nghien'],
-    answer: `Việt Nam áp dụng song song hai hướng xử lý đối với người sử dụng/nghiện ma tuý: biện pháp hành chính (cai nghiện) và xử lý hình sự (nếu có hành vi cấu thành tội phạm khác).
-
-**Quy định pháp luật**
-- Luật Phòng, chống ma tuý số 73/2021/QH14, Chương V quy định về cai nghiện ma tuý.
-- Nghị định 105/2021/NĐ-CP hướng dẫn chi tiết quy trình xác định tình trạng nghiện và áp dụng biện pháp cai nghiện.
-
-**Các hình thức cai nghiện**
-1. Cai nghiện tự nguyện tại gia đình, cộng đồng.
-2. Cai nghiện bắt buộc tại cơ sở cai nghiện ma tuý công lập (áp dụng khi vi phạm quy định về cai nghiện tự nguyện hoặc tái nghiện).
-3. Đưa vào cơ sở giáo dục bắt buộc, trường giáo dưỡng đối với người chưa thành niên theo quy định riêng.
-
-**Lưu ý thực tiễn**
-- Thời hạn cai nghiện bắt buộc thường từ 12 đến 24 tháng tuỳ quyết định của cơ quan có thẩm quyền.
-- Gia đình người nghiện nên chủ động liên hệ cơ quan y tế/công an địa phương để được hướng dẫn quy trình xác định tình trạng nghiện.`,
-    sources: [
-      { source: '73luat.md', doc_type: 'legal', score: 0.81 },
-      { source: '105_2021_ND-CP_496664.md', doc_type: 'legal', score: 0.78 },
-      { source: 'article_03.md', doc_type: '', score: 0.39 }
-    ]
-  }
-];
-
-const MOCK_DEFAULT_RESPONSE = {
-  answer: `Cảm ơn câu hỏi của bạn. Đây là **bản demo chạy bằng dữ liệu mẫu cục bộ** (không gọi API ngoài) nên hệ thống chỉ có thể trả lời chi tiết một số chủ đề mẫu như: tàng trữ, mua bán/vận chuyển, hoặc cai nghiện ma tuý.
-
-**Quy định pháp luật**
-- Hệ thống thật được xây dựng dựa trên Luật Phòng, chống ma tuý số 73/2021/QH14, Bộ luật Hình sự 2015 (sửa đổi 2017), Nghị định 105/2021/NĐ-CP và các văn bản liên quan.
-
-**Lưu ý thực tiễn**
-- Hãy thử các câu hỏi như "Hình phạt cho tội tàng trữ ma tuý là gì?" hoặc "Quy định về cai nghiện ma tuý bắt buộc?" để xem ví dụ câu trả lời có trích dẫn đầy đủ.`,
-  sources: [
-    { source: '73luat.md', doc_type: 'legal', score: 0.42 },
-    { source: 'article_01.md', doc_type: '', score: 0.30 }
-  ]
-};
-
-function getMockResponse(userText) {
-  const lower = userText.toLowerCase();
-  const match = MOCK_RESPONSES.find(r => r.keywords.some(k => lower.includes(k)));
-  return match || MOCK_DEFAULT_RESPONSE;
-}
-
-// ── Chat (mock — chạy local, không gọi backend/API nào) ───────────────────────
 async function callChatAPI(userText) {
   state.isTyping=true;
   const typingRow=showTyping();
 
-  // Giả lập độ trễ mạng để giữ trải nghiệm "đang suy nghĩ" của UI
-  await new Promise(resolve => setTimeout(resolve, 700 + Math.random()*600));
+  try {
+    const response = await fetch(`${API_BASE}/chat`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ query: userText })
+    });
 
-  const data = getMockResponse(userText);
-  typingRow.remove();
-  state.isTyping=false;
-  addAIResponse(formatLegalResponse(data.answer) + formatSources(data.sources, 'mock'), data.answer);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    typingRow.remove();
+    state.isTyping=false;
+
+    if (data.answer) {
+      addAIResponse(formatLegalResponse(data.answer) + formatSources(data.sources, data.retrieval_source), data.answer);
+    } else {
+      addAIResponse('<p style="color:var(--red)">Có lỗi xảy ra khi kết nối đến hệ thống. Vui lòng thử lại.</p>', '');
+    }
+  } catch(err) {
+    typingRow.remove();
+    state.isTyping=false;
+    addAIResponse('<p style="color:var(--red)">Không thể kết nối đến hệ thống AI. Vui lòng kiểm tra kết nối mạng và thử lại.</p>', '');
+  }
 }
 
 // Hiển thị các nguồn (chunks) mà pipeline dùng để tạo câu trả lời — Task 10
