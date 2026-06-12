@@ -5,6 +5,8 @@ requests>=2.31.0
 # API backend (chatbot demo)
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
+slowapi>=0.1.9
+redis>=5.0.0
 
 # Task 2 - Crawling
 crawl4ai>=0.3.0

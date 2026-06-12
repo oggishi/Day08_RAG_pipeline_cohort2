@@ -1,0 +1,29 @@
+.git
+.github
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.env
+.env.*
+!.env.example
+
+# Dev/raw data not needed at runtime (only data/standardized/ is used)
+data/raw
+data/processed
+
+# Local Weaviate volumes
+weaviate-data
+
+# Frontend (deployed separately via GitHub Pages)
+web
+
+# Group project / evaluation (not needed in API image)
+group_project
+
+# Docs, logs, plans (data/standardized/*.md are needed at runtime — keep those)
+*.md
+!data/standardized/**/*.md
+!api/SPACE_README.md
+*.log

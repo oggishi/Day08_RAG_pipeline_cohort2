@@ -1,0 +1,31 @@
+# Runtime dependencies for the deployed API (api/main.py + Task 5-10 pipeline).
+# Subset of requirements.txt — excludes crawling/conversion/UI/eval deps
+# (crawl4ai, markitdown, langchain-text-splitters, streamlit, deepeval) that
+# are only needed for the offline data-prep notebooks/scripts (Task 1-4),
+# not for serving /chat. Keeps the Docker image smaller.
+
+python-dotenv>=1.0.0
+
+# API
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+slowapi>=0.1.9
+redis>=5.0.0
+
+# Task 5 - Semantic search
+sentence-transformers>=2.2.0
+weaviate-client>=4.5.0
+
+# Task 6 - Lexical search (BM25)
+rank-bm25>=0.2.2
+underthesea>=8.3.0
+
+# Task 7 - Reranking (cross-encoder)
+transformers>=4.40.0
+torch>=2.2.0
+
+# Task 8 - PageIndex
+pageindex>=0.1.0
+
+# Task 10 - Generation
+openai>=1.30.0

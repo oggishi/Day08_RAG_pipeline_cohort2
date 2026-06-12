@@ -161,6 +161,7 @@ def generate_with_citation(query: str, top_k: int = TOP_K) -> dict:
             "answer": "Tôi không thể xác minh thông tin này từ nguồn hiện có",
             "sources": [],
             "retrieval_source": "none",
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0},
         }
 
     # Step 2: Reorder để chunk quan trọng nhất nằm ở đầu/cuối context — giảm
@@ -202,6 +203,10 @@ def generate_with_citation(query: str, top_k: int = TOP_K) -> dict:
         "answer": answer,
         "sources": chunks,
         "retrieval_source": chunks[0].get("source", "hybrid") if chunks else "none",
+        "usage": {
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+        },
     }
 
 

@@ -1,0 +1,46 @@
+# Render Blueprint — deploy backend API (Docker) + Redis.
+# https://render.com/docs/blueprint-spec
+#
+# Cách dùng: New + > Blueprint trên Render Dashboard, chọn repo này. Render
+# sẽ build Dockerfile ở root và tạo service "luatmatuy-api" + Redis instance.
+# Sau khi tạo, điền các secret (OPENAI_API_KEY, WEAVIATE_*, PAGEINDEX_API_KEY,
+# API_KEY...) trong tab Environment của service trên Render Dashboard.
+
+services:
+  - type: web
+    name: luatmatuy-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: RATE_LIMIT
+        value: "20/minute"
+      - key: DAILY_COST_LIMIT_USD
+        value: "5"
+      - key: LOG_LEVEL
+        value: "INFO"
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: luatmatuy-redis
+          property: connectionString
+      # Secrets — điền giá trị thật trong Render Dashboard (không commit vào repo):
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: WEAVIATE_URL
+        sync: false
+      - key: WEAVIATE_API_KEY
+        sync: false
+      - key: PAGEINDEX_API_KEY
+        sync: false
+      - key: JINA_API_KEY
+        sync: false
+      - key: API_KEY
+        sync: false
+
+  - type: redis
+    name: luatmatuy-redis
+    plan: free
+    ipAllowList: []
