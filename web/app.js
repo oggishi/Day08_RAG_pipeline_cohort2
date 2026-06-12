@@ -268,31 +268,73 @@ function sendMessage() {
 // (512MB RAM) không đủ cho các model này, dễ bị OOM khi gọi /chat.
 const API_BASE = 'https://oggishi-lab08.hf.space';
 
+// Stream câu trả lời theo từng token (SSE) — người dùng thấy text xuất hiện
+// dần ngay khi model sinh ra, không phải chờ toàn bộ câu trả lời xong mới
+// hiển thị. Xem POST /chat/stream trong api/main.py.
 async function callChatAPI(userText) {
   state.isTyping=true;
   const typingRow=showTyping();
 
+  let response;
   try {
-    const response = await fetch(`${API_BASE}/chat`, {
+    response = await fetch(`${API_BASE}/chat/stream`, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ query: userText })
     });
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    typingRow.remove();
-    state.isTyping=false;
-
-    if (data.answer) {
-      addAIResponse(formatLegalResponse(data.answer) + formatSources(data.sources, data.retrieval_source), data.answer);
-    } else {
-      addAIResponse('<p style="color:var(--red)">Có lỗi xảy ra khi kết nối đến hệ thống. Vui lòng thử lại.</p>', '');
-    }
+    if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
   } catch(err) {
     typingRow.remove();
     state.isTyping=false;
     addAIResponse('<p style="color:var(--red)">Không thể kết nối đến hệ thống AI. Vui lòng kiểm tra kết nối mạng và thử lại.</p>', '');
+    return;
+  }
+
+  typingRow.remove();
+  let row=null, bubble=null, raw='';
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buf='';
+
+  try {
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream:true});
+
+      let parts = buf.split('\n\n');
+      buf = parts.pop(); // phần cuối có thể chưa đủ 1 event, giữ lại cho lần đọc sau
+
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith('data:')) continue;
+        const payload = JSON.parse(line.slice(5).trim());
+
+        if (typeof payload.token === 'string') {
+          if (!row) {
+            row = renderMessage('ai', '');
+            bubble = row.querySelector('.bubble');
+          }
+          raw += payload.token;
+          bubble.innerHTML = escapeHTML(raw).replace(/\n/g,'<br>');
+          scrollBottom();
+        } else if (payload.done) {
+          const finalHtml = formatLegalResponse(raw) + formatSources(payload.sources, payload.retrieval_source);
+          if (!row) { row = renderMessage('ai', ''); bubble = row.querySelector('.bubble'); }
+          bubble.innerHTML = finalHtml;
+          state.messages.push({role:'ai', content:finalHtml, rawText:raw});
+          persistActiveSession();
+          scrollBottom();
+        }
+      }
+    }
+  } catch(err) {
+    if (!row) {
+      addAIResponse('<p style="color:var(--red)">Không thể kết nối đến hệ thống AI. Vui lòng kiểm tra kết nối mạng và thử lại.</p>', '');
+    }
+  } finally {
+    state.isTyping=false;
   }
 }
 
@@ -390,6 +432,7 @@ function renderMessage(role, html) {
     </div>`;
   msgContainer.appendChild(row);
   scrollBottom();
+  return row;
 }
 
 function addAIResponse(html, rawText) { addMessage('ai',html,rawText); }

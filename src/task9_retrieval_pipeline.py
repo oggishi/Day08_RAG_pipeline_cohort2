@@ -100,8 +100,8 @@ def retrieve(
     best_score = final_results[0]["score"] if final_results else 0.0
     if not final_results or best_score < score_threshold:
         print(
-            f"  ⚠ Hybrid score ({best_score:.3f}) < threshold "
-            f"({score_threshold}). Fallback → PageIndex"
+            f"  [!] Hybrid score ({best_score:.3f}) < threshold "
+            f"({score_threshold}). Fallback -> PageIndex"
         )
         try:
             return pageindex_search(query, top_k=top_k)
@@ -110,7 +110,7 @@ def retrieve(
             # soát (hết credit, rate limit, mạng...) — "fallback" mà tự crash
             # thì còn tệ hơn không fallback. Degrade về kết quả hybrid (dù
             # dưới ngưỡng) thay vì làm sập toàn bộ retrieval pipeline.
-            print(f"  ⚠ PageIndex fallback thất bại ({e}). Dùng kết quả hybrid.")
+            print(f"  [!] PageIndex fallback that bai ({e}). Dung ket qua hybrid.")
             return final_results[:top_k]
 
     return final_results[:top_k]

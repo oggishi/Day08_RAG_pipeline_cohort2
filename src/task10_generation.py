@@ -210,6 +210,68 @@ def generate_with_citation(query: str, top_k: int = TOP_K) -> dict:
     }
 
 
+# =============================================================================
+# STREAMING GENERATION (cho API /chat/stream — trả token ngay khi sinh ra,
+# tránh người dùng phải chờ toàn bộ câu trả lời ~vài giây mới thấy gì)
+# =============================================================================
+
+def generate_with_citation_stream(query: str, top_k: int = TOP_K):
+    """
+    Giống generate_with_citation() nhưng stream câu trả lời theo từng token.
+
+    Yields:
+        - str: từng đoạn text (delta) của câu trả lời, theo thứ tự sinh ra
+        - dict cuối cùng: {"sources", "retrieval_source", "usage"} — metadata
+          chỉ có đầy đủ sau khi model sinh xong (usage), nên trả ở cuối stream.
+    """
+    chunks = retrieve(query, top_k=top_k)
+
+    if not chunks:
+        yield "Tôi không thể xác minh thông tin này từ nguồn hiện có"
+        yield {
+            "sources": [],
+            "retrieval_source": "none",
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+        }
+        return
+
+    reordered = reorder_for_llm(chunks)
+    context = format_context(reordered)
+    user_message = f"""Context:\n{context}\n\n---\n\nQuestion: {query}"""
+
+    from openai import OpenAI
+
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    stream = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
+        temperature=TEMPERATURE,
+        top_p=TOP_P,
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+
+    usage = {"prompt_tokens": 0, "completion_tokens": 0}
+    for event in stream:
+        if event.choices and event.choices[0].delta.content:
+            yield event.choices[0].delta.content
+        if event.usage:
+            usage = {
+                "prompt_tokens": event.usage.prompt_tokens,
+                "completion_tokens": event.usage.completion_tokens,
+            }
+
+    yield {
+        "sources": chunks,
+        "retrieval_source": chunks[0].get("source", "hybrid") if chunks else "none",
+        "usage": usage,
+    }
+
+
 if __name__ == "__main__":
     test_queries = [
         "Hình phạt cho tội tàng trữ trái phép chất ma tuý theo pháp luật Việt Nam?",
