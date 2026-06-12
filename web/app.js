@@ -262,8 +262,10 @@ function sendMessage() {
 
 // ── Chat backend API ──────────────────────────────────────────────────────────
 // Backend FastAPI bọc pipeline RAG thật (Task 9 hybrid retrieval + Task 10
-// generation có citation) — xem api/main.py. Đổi URL này thành Hugging Face
-// Space sau khi deploy (xem .github/workflows/deploy-backend.yml).
+// generation có citation) — xem api/main.py. Deploy trên Hugging Face Spaces
+// (Docker SDK, free CPU = 16GB RAM, đủ cho model bge-m3 + bge-reranker-v2-m3 +
+// torch — xem .github/workflows/deploy-backend.yml). Render free tier
+// (512MB RAM) không đủ cho các model này, dễ bị OOM khi gọi /chat.
 const API_BASE = 'https://oggishi-lab08.hf.space';
 
 async function callChatAPI(userText) {

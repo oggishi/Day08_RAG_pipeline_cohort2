@@ -18,6 +18,7 @@ on:
       - "src/**"
       - "data/standardized/**"
       - "requirements.txt"
+      - "requirements-api.txt"
       - "Dockerfile"
       - ".github/workflows/deploy-backend.yml"
   workflow_dispatch:
@@ -35,7 +36,7 @@ jobs:
           cp -r api /tmp/space/
           cp -r data/standardized /tmp/space/data/
           rm -rf /tmp/space/data/standardized/_pageindex_pdf_cache
-          cp requirements.txt Dockerfile /tmp/space/
+          cp requirements.txt requirements-api.txt Dockerfile /tmp/space/
           cp api/SPACE_README.md /tmp/space/README.md
 
       - name: Push to Hugging Face Space
