@@ -1,10 +1,14 @@
-# Render Blueprint — deploy backend API (Docker) + Redis.
+# Render Blueprint — deploy backend API (Docker) + Redis + frontend (static).
 # https://render.com/docs/blueprint-spec
 #
 # Cách dùng: New + > Blueprint trên Render Dashboard, chọn repo này. Render
-# sẽ build Dockerfile ở root và tạo service "luatmatuy-api" + Redis instance.
+# sẽ build Dockerfile ở root và tạo service "luatmatuy-api" + Redis instance +
+# static site "luatmatuy-web" (serve thư mục web/).
 # Sau khi tạo, điền các secret (OPENAI_API_KEY, WEAVIATE_*, PAGEINDEX_API_KEY,
-# API_KEY...) trong tab Environment của service trên Render Dashboard.
+# API_KEY...) trong tab Environment của service "luatmatuy-api" trên Render
+# Dashboard. Frontend dùng GitHub Pages làm option chính
+# (.github/workflows/deploy-frontend.yml) — "luatmatuy-web" ở đây là option
+# thay thế, deploy cùng Blueprint, không cần thiết lập riêng.
 
 services:
   - type: web
@@ -44,3 +48,17 @@ services:
     name: luatmatuy-redis
     plan: free
     ipAllowList: []
+
+  # Frontend tĩnh (HTML/CSS/JS) — option thay thế cho GitHub Pages.
+  # Sửa API_BASE trong web/app.js để trỏ về URL của service "luatmatuy-api"
+  # phía trên trước khi deploy.
+  - type: web
+    name: luatmatuy-web
+    runtime: static
+    staticPublishPath: ./web
+    buildCommand: ""
+    pullRequestPreviewsEnabled: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
