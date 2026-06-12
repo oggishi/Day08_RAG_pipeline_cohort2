@@ -230,6 +230,20 @@ uvicorn api.main:app --reload --port 8000
 # trỏ về http://localhost:8000 khi test local)
 ```
 
+### Chạy bằng Docker (production-like)
+
+```bash
+# Build + run API (cổng 7860) cùng Redis (rate limit + cost guard)
+docker compose up --build
+
+# Kiểm tra
+curl http://localhost:7860/health   # liveness
+curl http://localhost:7860/ready    # readiness (kiểm tra Weaviate)
+```
+
+Deploy lên Render bằng `render.yaml` (Blueprint) hoặc lên Hugging Face Spaces
+(xem mục dưới).
+
 ### Chạy bản demo đã deploy
 
 - Frontend: trang GitHub Pages của repo (deploy tự động qua `deploy-frontend.yml`)
@@ -248,6 +262,35 @@ xuất ra `group_project/evaluation/results.md`. Xem chi tiết tại
 [evaluation/golden_dataset.json](evaluation/golden_dataset.json),
 [evaluation/eval_pipeline.py](evaluation/eval_pipeline.py),
 [evaluation/results.md](evaluation/results.md).
+
+---
+
+## Checklist Deliverable (Production Readiness)
+
+- [x] Dockerfile (multi-stage, builder + runtime, non-root user, CPU-only torch)
+- [x] docker-compose.yml (api + redis)
+- [x] .dockerignore
+- [x] Health check endpoint (`GET /health`)
+- [x] Readiness endpoint (`GET /ready` — kiểm tra kết nối Weaviate)
+- [x] API Key authentication (`X-API-Key`, tuỳ chọn qua biến `API_KEY`)
+- [x] Rate limiting (`slowapi`, cấu hình qua `RATE_LIMIT`, mặc định 20/minute)
+- [x] Cost guard (giới hạn chi phí OpenAI ước tính/ngày qua `DAILY_COST_LIMIT_USD`)
+- [x] Config từ environment variables (`api/config.py`)
+- [x] Structured logging (JSON logs cho mọi request)
+- [x] Graceful shutdown (FastAPI lifespan)
+- [x] Public URL ready (Render config — `render.yaml`, ngoài ra đã deploy live trên Hugging Face Spaces)
+
+> **Lưu ý về kích thước image:** Dockerfile đã được tách multi-stage và dùng
+> `requirements-api.txt` (loại bỏ các dependency chỉ dùng cho data prep
+> offline: `crawl4ai`, `markitdown`, `streamlit`, `deepeval`) cùng bản
+> `torch` CPU-only. Tuy vậy image build ra vẫn ~2.2GB (chưa đạt mục tiêu
+> < 500MB) vì pipeline retrieval/reranking (Task 5, Task 7) dùng các model
+> embedding/cross-encoder chạy local qua `sentence-transformers`/`transformers`/
+> `torch` — đây là lựa chọn kỹ thuật cốt lõi của pipeline (xem giải thích
+> trong `src/task7_reranking.py`). Muốn đưa image xuống dưới 500MB sẽ cần
+> thay các model local này bằng API-based embedding/reranking (vd. OpenAI
+> embeddings, Jina Rerank API), tức thay đổi kiến trúc retrieval đã làm ở
+> bài cá nhân.
 
 ---
 

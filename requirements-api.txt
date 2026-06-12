@@ -16,6 +16,10 @@ redis>=5.0.0
 sentence-transformers>=2.2.0
 weaviate-client>=4.5.0
 
+# Task 6 - Lexical search corpus chunking (task4_chunking_indexing.chunk_documents,
+# imported lazily by task6's _load_corpus())
+langchain-text-splitters>=0.2.0
+
 # Task 6 - Lexical search (BM25)
 rank-bm25>=0.2.2
 underthesea>=8.3.0
