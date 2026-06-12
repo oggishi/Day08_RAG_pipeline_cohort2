@@ -3,6 +3,14 @@
 Pipeline RAG (Retrieval-Augmented Generation) trả lời câu hỏi về pháp luật
 phòng, chống ma túy và tin tức liên quan, có trích dẫn nguồn (citation).
 
+## Sản Phẩm Cuối — Live Demo
+
+| Sản phẩm | URL |
+|---|---|
+| Live Demo (GitHub Pages) | https://oggishi.github.io/Day08_RAG_pipeline_cohort2 |
+| Backend API (Render) | https://luatmatuy-api.onrender.com |
+| Frontend (Render) | https://luatmatuy-web.onrender.com |
+
 ## Kiến Trúc Hệ Thống
 
 ```
